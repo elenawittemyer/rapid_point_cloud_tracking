@@ -1,6 +1,4 @@
 import jax.numpy as np
-from jax import jit
-from functools import partial
 
 def sdfCircle(p, r): # p = point, r = radius
     return np.linalg.norm(p) - r
