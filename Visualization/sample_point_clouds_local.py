@@ -11,12 +11,3 @@ def get_rect(center, width, height, num_points):
     rect = np.vstack((np.vstack((np.vstack((top, bottom)), left)), right))
     rect = rect + center.T
     return rect
-
-
-
-def get_circle(center, radius, num_points):
-    x_point = np.random.uniform(0, radius, num_points)
-    y_point = np.sqrt(1-x_point**2)
-    circle = np.vstack((x_point, y_point)).T
-    circle = circle + center
-    return circle
