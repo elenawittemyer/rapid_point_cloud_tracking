@@ -3,6 +3,7 @@ import jaxopt
 import jax.numpy as np
 import numpy
 from jax import jit
+import jaxlie
 from jaxlie import SE2, SE3
 from sample_point_clouds import get_rect, get_circle
 import time
@@ -61,10 +62,10 @@ def calc_cost_sq(T, point_cloud):
 
 def opt_T(shape, point_cloud):
     if shape == 'circle' or shape == 'Circle' or shape == 'c' or shape == 'C':
-        solver = jaxopt.ScipyMinimize(fun = calc_cost_c, maxiter = 500)
+        solver = jaxopt.ScipyMinimize(method = 'Nelder-Mead', fun = calc_cost_c, maxiter = 500)
         T_opt, state = solver.run(np.array([0., 0.]), point_cloud)
     elif shape == 'square' or shape == 'Square'  or shape == 'sq' or shape == 'Sq':
-        solver = jaxopt.ScipyMinimize(fun = calc_cost_sq, maxiter = 500)
+        solver = jaxopt.ScipyMinimize(method = 'Nelder-Mead', fun = calc_cost_sq, maxiter = 500)
         T_opt, state = solver.run(np.array([0., 0.]), point_cloud)
     else:
         return 'unrecognized shape'
@@ -81,15 +82,24 @@ def assign_primitive(shapes, point_cloud):
             assigned_shape = shapes[i]
     return sdf_min[0], sdf_min[1], assigned_shape
 
-
-
 #point_cloud_test = get_circle(np.array([2, 2]), 1, 1000)
-point_cloud_test = get_rect(np.array([2,2]), 1, 1, 1000)
+point_cloud_test = get_rect(np.array([-5,12]), 1, 1, 10000)
 test_shapes = ['square', 'circle']
 start_time = time.time()
 print(assign_primitive(test_shapes, point_cloud_test))
 print(time.time()-start_time)
 
+################################
+## lie group helpers ###########
+################################
+
+def evolve_pos(R0, wt):
+    Rf = R0 @ SE2.exp(wt)
+    return Rf
+
+def get_twist(R0, Rf, t):
+    twist = SE2.log(Rf @ SE2.inverse(R0))
+    return twist
 
 ################################
 ## visualization helpers #######
