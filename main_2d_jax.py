@@ -82,12 +82,20 @@ def assign_primitive(shapes, point_cloud):
             assigned_shape = shapes[i]
     return sdf_min[0], sdf_min[1], assigned_shape
 
-#point_cloud_test = get_circle(np.array([2, 2]), 1, 1000)
-point_cloud_test = get_rect(np.array([-5,12]), 1, 1, 10000)
-test_shapes = ['square', 'circle']
-start_time = time.time()
-print(assign_primitive(test_shapes, point_cloud_test))
-print(time.time()-start_time)
+
+def main(frames):
+    test_shapes = ['square', 'circle']
+    i = 0
+    while i<frames:
+        measured_point_cloud = get_point_cloud()
+        start_time = time.time()
+        print(assign_primitive(test_shapes, measured_point_cloud))
+        print(start_time - time.time())
+        i += 1
+
+def get_point_cloud():
+    #return get_circle(np.array([2, 2]), 1, 1000)
+    return get_rect(np.array([2, 2]), 1, 1, 1000)
 
 ################################
 ## lie group helpers ###########
@@ -97,7 +105,7 @@ def evolve_pos(R0, wt):
     Rf = R0 @ SE2.exp(wt)
     return Rf
 
-def get_twist(R0, Rf, t):
+def get_twist(R0, Rf):
     twist = SE2.log(Rf @ SE2.inverse(R0))
     return twist
 
