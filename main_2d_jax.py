@@ -82,32 +82,66 @@ def assign_primitive(shapes, point_cloud):
             assigned_shape = shapes[i]
     return sdf_min[0], sdf_min[1], assigned_shape
 
-
 def main(frames):
     test_shapes = ['square', 'circle']
-    i = 0
+    twist = get_robot_vel()
+    measured_point_cloud = get_point_cloud(0)
+    transform, sdf, shape = assign_primitive(test_shapes, measured_point_cloud)
+    i = 1
     while i<frames:
-        measured_point_cloud = get_point_cloud()
-        start_time = time.time()
-        print(assign_primitive(test_shapes, measured_point_cloud))
-        print(start_time - time.time())
-        i += 1
+        est_pos_SE2 = evolve_pos(transform, twist)
+        est_pos = np.array([(est_pos_SE2).translation()[0],
+                            (est_pos_SE2).translation()[1]])
+        measured_point_cloud = get_point_cloud(i)
 
-def get_point_cloud():
-    #return get_circle(np.array([2, 2]), 1, 1000)
-    return get_rect(np.array([2, 2]), 1, 1, 1000)
+        if shape == 'circle' or shape == 'Circle' or shape == 'c' or shape == 'C':
+            sdf_current = calc_cost_c(est_pos, measured_point_cloud)
+        elif shape == 'square' or shape == 'Square'  or shape == 'sq' or shape == 'Sq':
+            sdf_current = calc_cost_sq(est_pos, measured_point_cloud)
+        else:
+            return 'unrecognized shape'
+        
+        if sdf_current>.1:
+            transform_new, sdf_new, shape_new = assign_primitive(test_shapes, measured_point_cloud)
+            del_twist = get_twist(transform_new, transform)
+            twist = twist + del_twist
+            transform, sdf, shape = transform_new, sdf_new, shape_new
+        else:
+            transform, sdf, shape = est_pos, sdf_current, shape
+        
+        print("** iteration " + str(i) + " **")
+        print('transform:', transform)
+        print('sdf: ', sdf)
+        
+        i += 1
 
 ################################
 ## lie group helpers ###########
 ################################
 
 def evolve_pos(R0, wt):
+    R0 = SE2.from_xy_theta(R0[0], R0[1], 0.)
     Rf = R0 @ SE2.exp(wt)
     return Rf
 
 def get_twist(R0, Rf):
+    R0 = SE2.from_xy_theta(R0[0], R0[1], 0.)
+    Rf = SE2.from_xy_theta(Rf[0], Rf[1], 0.)
     twist = SE2.log(Rf @ SE2.inverse(R0))
     return twist
+
+################################
+## test data ###################
+################################
+
+def get_point_cloud(iter):
+    #return get_circle(np.array([2, 2]), 1, 1000)
+    return get_rect(np.array([iter+1, iter+1]), 1, 1, 1000)
+
+def get_robot_vel():
+    Ti = np.array([0., 0., 0.])
+    Tf = np.array([2., 2., 0.])
+    return get_twist(Ti, Tf)
 
 ################################
 ## visualization helpers #######
@@ -123,3 +157,4 @@ with open('Visualization/c_iter.txt', 'w') as f:
         f.write(f"{line}\n")
 '''
 
+#TODO: implement T[2] into optimized T (theta isn't current used)
