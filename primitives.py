@@ -17,6 +17,27 @@ def sdfBox(p_array, a, b, t): # p = point, a = start of centerline, b = end of c
         sdf_array.append(sdf)
     return np.array(sdf_array)
 
+def sdfTriangle(p, r):
+    k = np.sqrt(3.0)
+    p_x = abs(p[0]) - r
+    p_y = p[1] + r/k
+
+    pos_point = np.array([p[0]-k*p[1],-k*p[0]-p[1]])/2.0
+    neg_point = np.array([p_x, p_y])
+    point_choice = [pos_point, neg_point]
+
+    index_choice = np.argmax(np.array([p_x+k*p_y, 0.0]))
+    point = point_choice[index_choice]
+
+    p_clamp_x = np.min(np.array([np.max(np.array([point[0], -2.0*r])), 0.0]))
+    p_clamp_y = point[1]
+    p_clamp = np.array([p_clamp_x, p_clamp_y])
+
+    return -np.linalg.norm((p_clamp))*np.sign(p_clamp[1])
+
 a_test = np.array([0, 0])
 b_test = np.array([0, 1])
 th_test = 1
+
+p_test = [2,2]
+r_test = 1
