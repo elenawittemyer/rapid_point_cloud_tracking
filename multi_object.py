@@ -3,13 +3,16 @@ import jaxopt
 import jax.numpy as np
 import numpy
 from jax import jit
+from functools import partial
 import jaxlie
 from jaxlie import SE2, SE3
 from sample_point_clouds import get_rect, get_circle
 import time
 import scipy
 
-@jit
+global_num_clouds = 5
+global_num_shapes = 2
+
 def sdf_sq(T, point):
     # transform point cloud
     T = SE2.from_xy_theta(T[0], T[1], 0.)
@@ -33,7 +36,6 @@ def sdf_sq(T, point):
     return sdf
 
 
-@jit
 def sdf_c(T, point):
     # transform point cloud
     T = SE2.from_xy_theta(T[0], T[1], 0.)
@@ -50,27 +52,61 @@ def sdf_c(T, point):
 batch_sdf_sq = jax.vmap(sdf_sq, in_axes=[None, 0])
 batch_sdf_c = jax.vmap(sdf_c, in_axes=[None, 0])
 
-def calc_cost_c(T, point_cloud):
-    sdf_array = batch_sdf_c(T, point_cloud)
-    cost = np.linalg.norm(np.array(sdf_array), ord=1)
+def calc_cost_c(args, point_clouds):
+    N = args["N"]
+    T = args["T"]
+
+    cost = 0
+    seg_clouds = cloud_splitting(N, point_clouds)
+    for i in range(len(seg_clouds)):
+        sdf_array = batch_sdf_c(T[i], seg_clouds[i])
+        cost += np.linalg.norm(np.array(sdf_array), ord=1)
     return cost
 
-def calc_cost_sq(T, point_cloud):
-    sdf_array = batch_sdf_sq(T, point_cloud)
-    cost = np.linalg.norm(np.array(sdf_array), ord=1)
+#TODO: change T to be an array of Ts of length N
+
+def calc_cost_sq(args, point_clouds):
+    N = args["N"]
+    T = args["T"]
+    seg_clouds = cloud_splitting(N, point_clouds)
+    cost = 0
+    for i in range(len(seg_clouds)):
+        sdf_array = batch_sdf_sq(T[i], seg_clouds[i])
+        cost += np.linalg.norm(np.array(sdf_array), ord=1)
     return cost
 
-def opt_T(shape, point_cloud):
+#calc_cost_sq = jit(calc_cost_sq, static_argnums = (0,))
+#calc_cost_c = jit(calc_cost_c, static_argnums = (0,))
+
+#TODO: try LBFGS for optimization
+
+def opt_T(shape, point_clouds):
+
+    args = {
+        "N" : 1.0,
+        "T" : np.zeros((1, 2))
+    }
+
     if shape == 'circle' or shape == 'Circle' or shape == 'c' or shape == 'C':
-        solver = jaxopt.ScipyMinimize(method = 'Nelder-Mead', fun = calc_cost_c, maxiter = 500)
-        T_opt, state = solver.run(np.array([0., 0.]), point_cloud)
+        solver = jaxopt.ScipyMinimize(method = 'Nelder-Mead', fun = calc_cost_c, maxiter = 500, jit=False)
+        arg_opt, state = solver.run(args, point_clouds)
     elif shape == 'square' or shape == 'Square'  or shape == 'sq' or shape == 'Sq':
-        solver = jaxopt.ScipyMinimize(method = 'Nelder-Mead', fun = calc_cost_sq, maxiter = 500)
-        T_opt, state = solver.run(np.array([0., 0.]), point_cloud)
+        solver = jaxopt.ScipyMinimize(method = 'Nelder-Mead', fun = calc_cost_sq, maxiter = 500, jit=False)
+        arg_opt, state = solver.run(args, point_clouds)
     else:
         return 'unrecognized shape'
     
-    return T_opt, state.fun_val
+    return arg_opt, state.fun_val
+
+def cloud_splitting(num_clouds, point_clouds):
+    divis_clouds = (np.floor(len(point_clouds) / num_clouds)).astype(np.int32)
+    divis_indices = np.arange(0, len(point_clouds), divis_clouds)
+    return batch_splitting(point_clouds, divis_indices, divis_clouds)
+
+def splitting(array, start, step):
+    array = jax.lax.dynamic_slice_in_dim(array, start, step)
+    return array
+batch_splitting = jax.vmap(splitting, in_axes=[None, 0, None])
 
 def assign_primitive(shapes, point_cloud):
     sdf_min = opt_T(shapes[0], point_cloud)
@@ -88,10 +124,6 @@ def main(frames):
     measured_point_cloud = get_point_cloud(0)
     transform, sdf, shape = assign_primitive(test_shapes, measured_point_cloud)
     i = 1
-
-    pos_guess = []
-    sdf_guess = []
-    twist_guess = []
     while i<frames:
         est_pos_SE2 = evolve_pos(transform, twist)
         est_pos = np.array([(est_pos_SE2).translation()[0],
@@ -105,33 +137,19 @@ def main(frames):
         else:
             return 'unrecognized shape'
         
-        pos_guess.append(est_pos)
-        sdf_guess.append(sdf_current)
-        twist_guess.append(twist)
-
         if sdf_current>.1:
             transform_new, sdf_new, shape_new = assign_primitive(test_shapes, measured_point_cloud)
-            del_twist = get_twist(transform, transform_new)
-            twist = get_robot_vel() + del_twist
+            del_twist = get_twist(transform_new, transform)
+            twist = twist + del_twist
             transform, sdf, shape = transform_new, sdf_new, shape_new
         else:
             transform, sdf, shape = est_pos, sdf_current, shape
         
-        print("\n** iteration " + str(i) + " **")
-        print('transform: ', transform)
+        print("** iteration " + str(i) + " **")
+        print('transform:', transform)
         print('sdf: ', sdf)
-        print('twist', twist)
         
         i += 1
-
-    '''
-    with open('Visualization/transform_guess.npy', 'wb') as f:
-        np.save(f, np.array(pos_guess))
-    with open('Visualization/sdf_guess.npy', 'wb') as f:
-        np.save(f, np.array(sdf_guess))
-    with open('Visualization/twist_guess.npy', 'wb') as f:
-        np.save(f, np.array(twist_guess))
-    '''
 
 ################################
 ## lie group helpers ###########
@@ -152,25 +170,32 @@ def get_twist(R0, Rf):
 ## test data ###################
 ################################
 
-def get_point_cloud(iter):
-    return get_circle(random_vel(iter), 1, 100)
-    #return get_rect(random_vel(iter), 1, 1, 100)
+def get_point_cloud_circ(iter, start_pose, velocity):
+    return get_circle(start_pose + np.array([iter*velocity, iter*velocity]), 1, 1000)
+    
+def get_point_cloud_rect(iter, start_pose, velocity):
+    return get_rect(start_pose + np.array([iter*velocity, iter*velocity]), 1, 1, 1000)
 
+batch_cloud_sq = jax.vmap(get_point_cloud_circ, in_axes=[None, 0, 0])
+batch_cloud_c = jax.vmap(get_point_cloud_rect, in_axes=[None, 0, 0])
+num_c = numpy.random.randint(0, global_num_clouds)
 
-def random_vel(iter):
-    if iter<5:
-        pos = np.array([iter+1, iter+1])
-    elif 5<=iter<20:
-        pos = np.array([2*iter-5, 11-iter])
-    elif 20<=iter<28:
-        pos = np.array([73-2*iter, iter-27])
-    else:
-        pos = np.array([iter-9, iter-29])
-    return pos
+start_poses = (numpy.random.uniform(-10, 10, (global_num_clouds, 2))).reshape(5,2)
+velocities = numpy.random.uniform(-.5, .5, global_num_clouds)
+
+def get_point_clouds(iter):
+    point_clouds_c = batch_cloud_c(iter, start_poses[0:num_c], velocities[0:num_c])
+    point_clouds_c = np.ravel(point_clouds_c)
+    point_clouds_c = np.reshape(point_clouds_c, (int(len(point_clouds_c)/2), 2))
+    point_clouds_sq = batch_cloud_sq(iter, start_poses[num_c:global_num_clouds], velocities[num_c:global_num_clouds])
+    point_clouds_sq = np.ravel(point_clouds_sq)
+    point_clouds_sq= np.reshape(point_clouds_sq, (int(len(point_clouds_sq)/2), 2))
+
+    return np.concatenate((point_clouds_c, point_clouds_sq), axis=0)
 
 def get_robot_vel():
     Ti = np.array([0., 0., 0.])
-    Tf = np.array([0., 0., 0.])
+    Tf = np.array([2., 2., 0.])
     return get_twist(Ti, Tf)
 
 ################################
@@ -186,28 +211,11 @@ with open('Visualization/c_iter.txt', 'w') as f:
     for line in sdf_c_iter:
         f.write(f"{line}\n")
 '''
+
+clouds = get_point_clouds(0)
 start_time = time.time()
-main(50)
-print(time.time()-start_time)
+test_shape = 'square'
+x = opt_T(test_shape, clouds)
+print('done')
 
-'''
-point_cloud_pos = []
-point_clouds = []
-for i in range(35):
-    point_cloud_pos.append(random_vel(i))
-    point_clouds.append(get_point_cloud(i))
-
-point_cloud_pos = np.array(point_cloud_pos)
-point_clouds = np.array(point_clouds)
-with open('Visualization/point_cloud_pos.npy', 'wb') as f:
-    np.save(f, point_cloud_pos)
-
-with open('Visualization/point_clouds.npy', 'wb') as f:
-    np.save(f, point_clouds)
-'''
-
-#TODO: implement T[2] into optimized T (theta isn't current used)
-
-start_time = time.time()
-main(2)
-print(time.time()-start_time)
+#TODO: implement T[2] into optimized T (theta isn't current used),
