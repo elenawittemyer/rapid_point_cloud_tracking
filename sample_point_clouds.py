@@ -15,8 +15,12 @@ def get_rect(center, width, height, num_points):
 
 
 def get_circle(center, radius, num_points):
-    x_point = np.random.uniform(0, radius, num_points)
+    x_point = np.random.uniform(0, radius, int(num_points/4))
+    x_point = np.concatenate((x_point, -1*x_point))
     y_point = np.sqrt(1-x_point**2)
-    circle = np.vstack((x_point, y_point)).T
+    pos_circle = np.vstack((x_point, y_point)).T
+    neg_y_point = -1*y_point
+    neg_circle = np.vstack((x_point, neg_y_point)).T
+    circle = np.vstack((pos_circle, neg_circle))
     circle = circle + center
     return circle
