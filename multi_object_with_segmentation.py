@@ -83,26 +83,41 @@ batch_sdf_sq = jax.vmap(sdf_sq, in_axes=[None, 0])
 batch_sdf_c = jax.vmap(sdf_c, in_axes=[None, 0])
 batch_sdf_t = jax.vmap(sdf_t, in_axes=[None, 0])
 
-def sum_sdf_seg(transforms, point_clouds):
-    sdf_array_c1 = batch_sdf_c(transforms[0], point_clouds[0])
-    sdf_array_sq1 = batch_sdf_sq(transforms[1], point_clouds[1])
-    #sdf_array_c2 = batch_sdf_c(transforms[2], point_clouds[2])
-    c1_cost = np.linalg.norm(sdf_array_c1, ord=1)
-    sq1_cost = np.linalg.norm(sdf_array_sq1, ord=1)
-    #c2_cost = np.linalg.norm(sdf_array_c2, ord=1)
-    return c1_cost + sq1_cost
+def sum_sdf_seg_c(transform, point_cloud):
+    sdf_array = batch_sdf_c(transform, point_cloud)
+    cost = np.linalg.norm(sdf_array, ord = 1)
+    return cost
+
+def sum_sdf_seg_sq(transform, point_cloud):
+    sdf_array = batch_sdf_sq(transform, point_cloud)
+    cost = np.linalg.norm(sdf_array, ord = 1)
+    return cost
+
+def total_cost_c(transforms, point_clouds):
+    cost_1 = np.linalg.norm(sum_sdf_seg_c(transforms[0], point_clouds[0]))
+    cost_2 = np.linalg.norm(sum_sdf_seg_c(transforms[1], point_clouds[1]))
+    return cost_1 + cost_2
+
+def total_cost_sq(transforms, point_clouds):
+    cost_1 = np.linalg.norm(sum_sdf_seg_sq(transforms[0], point_clouds[0]))
+    cost_2 = np.linalg.norm(sum_sdf_seg_sq(transforms[1], point_clouds[1]))
+    return cost_1 + cost_2
 
 def opt_T(num_clouds, point_clouds):
-    T_i = np.zeros((num_clouds, 2))
-    solver = jaxopt.ScipyMinimize(method = 'nelder-mead', fun = sum_sdf_seg, maxiter = 500, callback=callback_fun)
-    T_opt, state = solver.run(T_i, point_clouds)
+    T_i_c = np.zeros((num_clouds[0], 2))
+    solver_c = jaxopt.ScipyMinimize(method = 'nelder-mead', fun = total_cost_c, maxiter = 500, callback=callback_fun)
+    T_opt_c, state_c = solver_c.run(T_i_c, point_clouds[0:num_clouds[0]])
+
+    T_i_sq = np.zeros((num_clouds[1], 2))
+    solver_sq = jaxopt.ScipyMinimize(method = 'nelder-mead', fun = total_cost_sq, maxiter = 500, callback=callback_fun)
+    T_opt_sq, state_sq = solver_sq.run(T_i_sq, point_clouds[num_clouds[0]:num_clouds[0]+num_clouds[1]])
     
-    return T_opt, state.fun_val
+    return np.concatenate((T_opt_c, T_opt_sq)), state_c.fun_val + state_sq.fun_val
 
 def sdf_segmentation(transform_init, point_cloud, num_clouds):
     sdf_array_c = batch_sdf_c(transform_init, point_cloud)
     filter = np.diff(sdf_array_c)
-    split_indices = np.where(filter>2)[0].tolist()
+    split_indices = np.where(np.abs(filter)>2.5)[0].tolist()
     split_indices.append(len(point_cloud))
     split_indices = np.array(split_indices)
     split_clouds = [point_cloud[0:split_indices[0]]]
@@ -111,21 +126,16 @@ def sdf_segmentation(transform_init, point_cloud, num_clouds):
     return split_clouds
 
 
-point_cloud_c1 = get_circle(np.array([1., 1.]), 1, 100)
-point_cloud_sq1 = get_rect(np.array([3., 8.]), 1, 1, 100)
-#point_cloud_c2 = get_circle(np.array([-4., 5.]), 1, 100)
-point_clouds_test = np.concatenate((point_cloud_c1, point_cloud_sq1), axis=0)
-init_segmentation = sdf_segmentation(np.array([0., 0.]), point_clouds_test, 2)
+point_cloud_c1 = get_circle(np.array([1., 1.]), 1, 50)
+point_cloud_c2 = get_circle(np.array([-4., 5.]), 1, 50)
+point_cloud_sq1 = get_rect(np.array([13., 5.]), 1, 1, 50)
+point_cloud_sq2 = get_rect(np.array([0., -6.]), 1, 1, 50)
+
+point_clouds_test = np.concatenate((point_cloud_c1, point_cloud_c2, point_cloud_sq1, point_cloud_sq2), axis=0)
+init_segmentation = sdf_segmentation(np.array([0., 0.]), point_clouds_test, 4)
 start_time = time.time()
-opt_T(2, init_segmentation)
+print(opt_T(np.array([2,2]), init_segmentation))
 print(time.time()-start_time)
 
-with open('Visualization/multi_obj/c_T.txt', 'w') as f:
-    for line in transforms_c:
-        f.write(f"{line}\n")
-
-with open('Visualization/multi_obj/sq_T.txt', 'w') as f:
-    for line in transforms_sq:
-        f.write(f"{line}\n")
 
 
