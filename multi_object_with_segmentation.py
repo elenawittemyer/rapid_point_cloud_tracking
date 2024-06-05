@@ -101,15 +101,16 @@ def total_cost_c(transforms, point_clouds):
 def total_cost_sq(transforms, point_clouds):
     cost_1 = np.linalg.norm(sum_sdf_seg_sq(transforms[0], point_clouds[0]))
     cost_2 = np.linalg.norm(sum_sdf_seg_sq(transforms[1], point_clouds[1]))
-    return cost_1 + cost_2
+    cost_3 = np.linalg.norm(sum_sdf_seg_sq(transforms[2], point_clouds[2]))
+    return cost_1 + cost_2 + cost_3
 
 def opt_T(num_clouds, point_clouds):
     T_i_c = np.zeros((num_clouds[0], 2))
-    solver_c = jaxopt.ScipyMinimize(method = 'nelder-mead', fun = total_cost_c, maxiter = 500, callback=callback_fun)
+    solver_c = jaxopt.ScipyMinimize(method = 'nelder-mead', fun = total_cost_c, maxiter = 500)
     T_opt_c, state_c = solver_c.run(T_i_c, point_clouds[0:num_clouds[0]])
 
     T_i_sq = np.zeros((num_clouds[1], 2))
-    solver_sq = jaxopt.ScipyMinimize(method = 'nelder-mead', fun = total_cost_sq, maxiter = 500, callback=callback_fun)
+    solver_sq = jaxopt.ScipyMinimize(method = 'nelder-mead', fun = total_cost_sq, maxiter = 500)
     T_opt_sq, state_sq = solver_sq.run(T_i_sq, point_clouds[num_clouds[0]:num_clouds[0]+num_clouds[1]])
     
     return np.concatenate((T_opt_c, T_opt_sq)), state_c.fun_val + state_sq.fun_val
@@ -126,16 +127,23 @@ def sdf_segmentation(transform_init, point_cloud, num_clouds):
     return split_clouds
 
 
+
 point_cloud_c1 = get_circle(np.array([1., 1.]), 1, 50)
 point_cloud_c2 = get_circle(np.array([-4., 5.]), 1, 50)
-point_cloud_sq1 = get_rect(np.array([13., 5.]), 1, 1, 50)
-point_cloud_sq2 = get_rect(np.array([0., -6.]), 1, 1, 50)
+point_cloud_sq1 = get_rect(np.array([9., 5.]), 1, 1, 50)
+point_cloud_sq2 = get_rect(np.array([-1., -6.]), 1, 1, 50)
+point_cloud_sq3 = get_rect(np.array([2, -2.]), 1, 1, 50)
 
-point_clouds_test = np.concatenate((point_cloud_c1, point_cloud_c2, point_cloud_sq1, point_cloud_sq2), axis=0)
-init_segmentation = sdf_segmentation(np.array([0., 0.]), point_clouds_test, 4)
+point_clouds_test = np.concatenate((point_cloud_c1, point_cloud_c2, point_cloud_sq1, point_cloud_sq2, point_cloud_sq3), axis=0)
+init_segmentation = sdf_segmentation(np.array([0., 0.]), point_clouds_test, 5)
 start_time = time.time()
-print(opt_T(np.array([2,2]), init_segmentation))
-print(time.time()-start_time)
+print(opt_T(np.array([2,3]), init_segmentation))
+print('Run time = ' + str(time.time()-start_time))
 
 
-
+c1 = np.linalg.norm(sum_sdf_seg_sq(np.array([0., 0.]), init_segmentation[0]))
+c2 = np.linalg.norm(sum_sdf_seg_sq(np.array([0., 0.]), init_segmentation[1]))
+c3 = np.linalg.norm(sum_sdf_seg_sq(np.array([0., 0.]), init_segmentation[2]))
+c4 = np.linalg.norm(sum_sdf_seg_sq(np.array([0., 0.]), init_segmentation[3]))
+c5 = np.linalg.norm(sum_sdf_seg_sq(np.array([0., 0.]), init_segmentation[4]))
+print('Init SDF: ' + str(c1+c2+c3+c4+c5))
