@@ -150,6 +150,11 @@ def random_vel(iter):
         pos = np.array([iter-9, iter-29])
     return pos
 
+def get_robot_vel():
+    Ti = np.array([0., 0., 0.])
+    Tf = np.array([0., 0., 0.])
+    return get_twist(Ti, Tf)
+
 ################################
 ## visualization helpers #######
 ################################
