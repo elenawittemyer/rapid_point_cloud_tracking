@@ -135,13 +135,20 @@ def get_twist(R0, Rf):
 ################################
 
 def get_point_cloud(iter):
-    #return get_circle(np.array([2, 2]), 1, 1000)
-    return get_rect(np.array([iter+1, iter+1]), 1, 1, 1000)
+    return get_circle(random_vel(iter), 1, 100)
+    #return get_rect(random_vel(iter), 1, 1, 100)
 
-def get_robot_vel():
-    Ti = np.array([0., 0., 0.])
-    Tf = np.array([2., 2., 0.])
-    return get_twist(Ti, Tf)
+
+def random_vel(iter):
+    if iter<5:
+        pos = np.array([iter+1, iter+1])
+    elif 5<=iter<20:
+        pos = np.array([2*iter-5, 11-iter])
+    elif 20<=iter<28:
+        pos = np.array([73-2*iter, iter-27])
+    else:
+        pos = np.array([iter-9, iter-29])
+    return pos
 
 ################################
 ## visualization helpers #######
