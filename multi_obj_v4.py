@@ -137,6 +137,7 @@ def main(frames, num_clouds):
                 transform_new, sdf_new, shape_new = assign_primitive(test_shapes, segmented_clouds[min_index])
                 del_twist = get_twist(transform, transform_new)
                 twists = twists.at[j].set(get_robot_vel() + del_twist)
+                #TODO: figure out why twists are off
                 transform, sdf, shape = transform_new, sdf_new, shape_new
             else:
                 transform, sdf, shape = est_pos, sdf_current, shape
