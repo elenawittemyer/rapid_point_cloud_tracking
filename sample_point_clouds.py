@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 
 def get_rect(center, width, height, num_points):
     samples = int(num_points/4)
@@ -13,7 +14,6 @@ def get_rect(center, width, height, num_points):
     return rect
 
 
-
 def get_circle(center, radius, num_points):
     x_point = np.random.uniform(0, radius, int(num_points/4))
     x_point = np.concatenate((x_point, -1*x_point))
@@ -24,3 +24,24 @@ def get_circle(center, radius, num_points):
     circle = np.vstack((pos_circle, neg_circle))
     circle = circle + center
     return circle
+
+def get_triangle(center, l, num_points):
+    r = l/np.cos(np.pi/6)
+    samples = num_points//3
+    a = center[0]
+    b = center[1]
+    v1 = np.array([a, b+r])
+    v2 = np.array([a+r*np.cos(np.pi/6), b-r*np.sin(np.pi/6)])
+    v3 = np.array([a-r*np.cos(np.pi/6), b-r*np.sin(np.pi/6)])
+    
+    l23 = np.vstack((np.linspace(v3[0], v2[0], samples), np.linspace(v3[1], v2[1], samples))).T
+    l12 = np.vstack((np.linspace(v1[0], v2[0], samples), np.linspace(v1[1], v2[1], samples))).T
+    l31 = np.vstack((np.linspace(v3[0], v1[0], samples), np.linspace(v3[1], v1[1], samples))).T
+
+    return np.vstack((np.vstack((l23, l12)), l31))
+
+'''
+triangle = get_triangle([0,0], 1, 100)
+plt.plot(triangle[:,0], triangle[:,1])
+plt.show()
+'''
