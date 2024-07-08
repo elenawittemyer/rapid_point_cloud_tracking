@@ -1,6 +1,7 @@
 import jax.numpy as np
 from jax import jit, vmap
-from sample_point_clouds import get_triangle
+from sample_point_clouds import get_triangle, get_rhomb
+import matplotlib.pyplot as plt
 
 def sdfCircle(p, r): # p = point, r = radius
     return np.linalg.norm(p) - r
@@ -19,39 +20,49 @@ def sdfBox(p_array, a, b, t): # p = point, a = start of centerline, b = end of c
         sdf_array.append(sdf)
     return np.array(sdf_array)
 
-def sdfTriangle(p, r):
-    k = np.sqrt(3.0)
-    p_x = abs(p[0]) - r
-    p_y = p[1] + r/k
+def sdfTriangle(p, l):
+    r = l/np.cos(np.pi/6)
+    q = r * np.array([.5, np.cos(np.pi/6)])
+    q.at[1].set(-p[1]+q[1]*2/3)
+    q.at[0].set(np.abs(q[0]))
 
-    pos_point = np.array([p_x-k*p_y,-k*p_x-p_y])/2.0
-    neg_point = np.array([p_x, p_y])
-    point_choice = [pos_point, neg_point]
-
-    index_choice = np.argmax(np.array([p_x+k*p_y, 1E-10]))
-    point = point_choice[index_choice]
-
-    p_clamp_x = point[0] - np.clip(point[0], -2*r, 0)
-    p_clamp_y = point[1]
-    p_clamp = np.array([p_clamp_x, p_clamp_y])
-
-    return -np.linalg.norm((p_clamp))*np.sign(p_clamp[1])
+    a = p-q*np.clip(np.dot(p,q)/np.dot(q,q), 0.0, 1.0)
+    b = p-q*np.array([np.clip(p[0]/q[0], 0.0, 1.0), 1.0])
+    s = -np.sign(q[1])
+    d = np.minimum(np.array([np.dot(a, a), s*(p[0]*q[1]-p[1]*q[0])]), np.array([np.dot(b, b), s*(p[1]-q[1])]))
+    return -np.sqrt(d[0])*np.sign(d[1])
 batch_sdf_t = vmap(sdfTriangle, in_axes=[0, None])
 
-def sdfIsoTriangle(p, q):
-    p_x = np.abs(p[0])
-    p_y = p[1]
-    p = np.array([p_x, p_y])
-    a = p-q*np.clip(np.dot(p,q)/np.dot(q,q), 0, 1)
-    b = p-q*np.array([np.clip(p[0]/q[0], 0, 1), 1])
-    s = np.sign(q[1])
-    d = np.minimum(np.array([np.dot(a, a), s*(p[0]*q[1]-p[1]*q[0])]),
-                   np.array([np.dot(b, b), s*(p[1]-q[1])]))
-    return -1*np.sqrt(d[0])*np.sign(d[1])
+def ndot(a, b):
+    return a[0]*b[0]-a[1]*b[1]
 
+def sdfRhombus(p, b):
+    p = np.abs(p)
+    h = np.clip(ndot(b-2*p, b)/np.dot(b, b), -1.0, 1.0)
+    d = np.linalg.norm(p-.5*b*np.array([1-h, 1+h]))
+    return d * np.sign(p[0]*b[1]+p[1]*b[0] - b[0]*b[1])
+batch_sdf_r = vmap(sdfRhombus, in_axes=[0, None])
+
+'''
+batch_sdf_t_test = vmap(sdfTriangle, in_axes=[None, 0])
 sample_triangle = get_triangle(np.array([0, 0]), 1, 100)
-print(sdfIsoTriangle(sample_triangle[0], np.array([1, 1])))
 
+list_grid = []
+p_x = np.arange(0, 10, .1)
+p_y = np.arange(0, 10, .1)
+coords = []
+for j in range(len(p_y)):
+    list_grid.append(np.hstack((np.array([p_x]).T, 
+                               np.array([p_y[j]*np.ones(len(p_x))]).T)))
+grid = list_grid[0]
+for i in range(1, len(list_grid)):
+    grid = np.vstack((grid, list_grid[i]))
 
-#TODO: sdfTriangle is accurate but cannot be vmapped due to indexing. sdfIsoTriangle might not be accurate (figure out what q is; maybe it
-# is equal and unequal side lengths?). Fix one or both of these.
+sdf_array = []
+sdf_sum = 0
+for i in range(len(sample_triangle)):
+    sdf_sum += batch_sdf_t_test(sample_triangle[i], grid)
+sdf_grid = np.reshape(sdf_sum, (100, 100))
+plt.imshow(sdf_grid)
+plt.show()
+'''

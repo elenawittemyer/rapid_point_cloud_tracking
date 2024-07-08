@@ -5,7 +5,7 @@ import numpy
 from jax import jit
 import jaxlie
 from jaxlie import SE2, SE3
-from sample_point_clouds import get_rect, get_circle
+from sample_point_clouds import get_rect, get_circle, get_rhomb, get_triangle
 import time
 import scipy
 
@@ -47,8 +47,47 @@ def sdf_c(T, point):
     sdf = np.linalg.norm(point_pos) - r
     return sdf
 
+@jit
+def sdf_t(T, point):
+    T = SE2.from_xy_theta(T[0], T[1], 0.)
+    T_inv = SE2.inverse(T)
+    T_p = SE2.from_xy_theta(point[0], point[1], 0.)
+    point_pos = np.array([(T_inv@T_p).translation()[0],
+                            (T_inv@T_p).translation()[1]])
+    
+    p = point_pos
+    q = np.array([1, 0])
+    p_x = np.abs(p[0])
+    p_y = p[1]
+    p = np.array([p_x, p_y])
+    a = p-q*np.clip(np.dot(p,q)/np.dot(q,q), 0, 1)
+    b = p-q*np.array([np.clip(p[0]/q[0], 0, 1), 1])
+    s = np.sign(q[1])
+    d = np.minimum(np.array([np.dot(a, a), s*(p[0]*q[1]-p[1]*q[0])]),
+                   np.array([np.dot(b, b), s*(p[1]-q[1])]))
+    return -1*np.sqrt(d[0])*np.sign(d[1])
+
+def ndot(a, b):
+    return a[0]*b[0]-a[1]*b[1]
+
+@jit
+def sdf_r(T, point):
+    T = SE2.from_xy_theta(T[0], T[1], 0.)
+    T_inv = SE2.inverse(T)
+    T_p = SE2.from_xy_theta(point[0], point[1], 0.)
+    point_pos = np.array([(T_inv@T_p).translation()[0],
+                            (T_inv@T_p).translation()[1]])
+    
+    p = point_pos
+    b = np.array([1, 1])
+    p = np.abs(p)
+    h = np.clip(ndot(b-2*p, b)/np.dot(b, b), -1.0, 1.0)
+    d = np.linalg.norm(p-.5*b*np.array([1-h, 1+h]))
+    return d * np.sign(p[0]*b[1]+p[1]*b[0] - b[0]*b[1])
+
 batch_sdf_sq = jax.vmap(sdf_sq, in_axes=[None, 0])
 batch_sdf_c = jax.vmap(sdf_c, in_axes=[None, 0])
+batch_sdf_r = jax.vmap(sdf_r, in_axes=[None, 0])
 
 def calc_cost_c(T, point_cloud):
     sdf_array = batch_sdf_c(T, point_cloud)
@@ -60,12 +99,20 @@ def calc_cost_sq(T, point_cloud):
     cost = np.linalg.norm(np.array(sdf_array), ord=1)
     return cost
 
+def calc_cost_r(T, point_cloud):
+    sdf_array = batch_sdf_r(T, point_cloud)
+    cost = np.linalg.norm(np.array(sdf_array), ord=1)
+    return cost
+
 def opt_T(shape, point_cloud):
     if shape == 'circle' or shape == 'Circle' or shape == 'c' or shape == 'C':
         solver = jaxopt.ScipyMinimize(method = 'Nelder-Mead', fun = calc_cost_c, maxiter = 500)
         T_opt, state = solver.run(np.array([0., 0.]), point_cloud)
     elif shape == 'square' or shape == 'Square'  or shape == 'sq' or shape == 'Sq':
         solver = jaxopt.ScipyMinimize(method = 'Nelder-Mead', fun = calc_cost_sq, maxiter = 500)
+        T_opt, state = solver.run(np.array([0., 0.]), point_cloud)
+    elif shape == 'rhombus' or shape == 'Rhombus' or shape =='r' or shape == 'R':
+        solver = jaxopt.ScipyMinimize(method = 'Nelder-Mead', fun = calc_cost_r, maxiter = 500)
         T_opt, state = solver.run(np.array([0., 0.]), point_cloud)
     else:
         return 'unrecognized shape'
@@ -83,7 +130,7 @@ def assign_primitive(shapes, point_cloud):
     return min_params[0], min_params[1], assigned_shape
 
 def main(frames, num_clouds):
-    test_shapes = ['square', 'circle']
+    test_shapes = ['square', 'circle', 'rhombus']
     transforms = []
     sdfs = []
     shapes = []
@@ -128,6 +175,15 @@ def main(frames, num_clouds):
                 sdf_options = np.array(sdf_options)
                 sdf_current = np.min(sdf_options)
                 min_index = np.where(sdf_options == sdf_current)[0][0]
+            
+            elif shapes[j] == 'rhombus' or shape == 'Rhombus'  or shape == 'r' or shape == 'R':
+                sdf_options = []
+                for k in cloud_options:
+                    sdf_options.append(calc_cost_r(est_pos, segmented_clouds[k]))
+                sdf_options = np.array(sdf_options)
+                sdf_current = np.min(sdf_options)
+                min_index = np.where(sdf_options == sdf_current)[0][0]
+
                 #TODO: currently does correspondence off of distance rather than shape. problematic if clouds are close together.
 
             else:
@@ -146,9 +202,9 @@ def main(frames, num_clouds):
             sdfs_new.append(sdf)
             shapes_new.append(shape)
             
-        print("** iteration " + str(i) + " **")
-        print('transforms:', transforms)
-        print('sdfs: ', sdfs)
+        print("\n** iteration " + str(i) + " **")
+        print('transforms: \n', np.array([transforms])[0])
+        print('sdfs: \n', np.array([sdfs])[0])
 
         transforms = transforms_new
         sdfs = sdfs_new
@@ -190,9 +246,10 @@ def sdf_segmentation(transform_init, point_cloud, num_clouds):
 ## test data ###################
 ################################
 def get_point_clouds(iter):
-    point_cloud_c1 = get_circle(random_vel(iter), 1, 100)
-    point_cloud_sq1 = get_rect(np.array([-12-iter, -12-iter]), 1, 1, 100)
-    return np.concatenate((point_cloud_c1, point_cloud_sq1), axis=0)
+    point_cloud_c = get_circle(random_vel(iter), 1, 100)
+    point_cloud_sq = get_rect(np.array([-12-iter, -12-iter]), 1, 1, 100)
+    point_cloud_r = get_rhomb(np.array([5+2*iter, 5+2*iter]), 1, 1, 100)
+    return np.concatenate((point_cloud_c, point_cloud_sq, point_cloud_r), axis=0)
 
 def random_vel(iter):
     if iter<5:
@@ -227,5 +284,5 @@ with open('Visualization/c_iter.txt', 'w') as f:
 #TODO: implement T[2] into optimized T (theta isn't current used)
 
 start_time = time.time()
-main(20, 2)
+main(20, 3)
 print(time.time()-start_time)

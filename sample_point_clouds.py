@@ -40,8 +40,30 @@ def get_triangle(center, l, num_points):
 
     return np.vstack((np.vstack((l23, l12)), l31))
 
+def get_rhomb(center, width, height, num_points):
+    m = height/width
+    x_neg = np.linspace(-width, 0, num_points//4)
+    x_pos = np.linspace(0, width, num_points//4)
+    y_1 = m*(x_neg+width)
+    y_2 = -m*(x_pos-width)
+    y_3 = -y_1
+    y_4 = -y_2
+
+    s1 = np.hstack((np.array([x_neg]).T, np.array([y_1]).T))
+    s2 = np.hstack((np.array([x_neg]).T, np.array([y_3]).T))
+    s3 = np.hstack((np.array([x_pos]).T, np.array([y_2]).T))
+    s4 = np.hstack((np.array([x_pos]).T, np.array([y_4]).T))
+
+    return np.vstack((s1, s2, s4, s3)) + center
+
 '''
-triangle = get_triangle([0,0], 1, 100)
+rhombus = get_rhomb([0, 0], 1, 1, 100)
+plt.plot(rhombus[:,0], rhombus[:,1])
+plt.show()
+'''
+
+'''
+triangle = get_triangle([.5, .2887], .5, 100)
 plt.plot(triangle[:,0], triangle[:,1])
 plt.show()
 '''
