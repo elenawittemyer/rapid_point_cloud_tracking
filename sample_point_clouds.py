@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import math
 
 def get_rect(center, width, height, num_points):
     samples = int(num_points/4)
@@ -25,21 +26,6 @@ def get_circle(center, radius, num_points):
     circle = circle + center
     return circle
 
-def get_triangle(center, l, num_points):
-    r = l/np.cos(np.pi/6)
-    samples = num_points//3
-    a = center[0]
-    b = center[1]
-    v1 = np.array([a, b+r])
-    v2 = np.array([a+r*np.cos(np.pi/6), b-r*np.sin(np.pi/6)])
-    v3 = np.array([a-r*np.cos(np.pi/6), b-r*np.sin(np.pi/6)])
-    
-    l23 = np.vstack((np.linspace(v3[0], v2[0], samples), np.linspace(v3[1], v2[1], samples))).T
-    l12 = np.vstack((np.linspace(v1[0], v2[0], samples), np.linspace(v1[1], v2[1], samples))).T
-    l31 = np.vstack((np.linspace(v3[0], v1[0], samples), np.linspace(v3[1], v1[1], samples))).T
-
-    return np.vstack((np.vstack((l23, l12)), l31))
-
 def get_rhomb(center, width, height, num_points):
     m = height/width
     x_neg = np.linspace(-width, 0, num_points//4)
@@ -56,6 +42,73 @@ def get_rhomb(center, width, height, num_points):
 
     return np.vstack((s1, s2, s4, s3)) + center
 
+
+def get_pent(center, side_length, num_points):
+    radius = side_length / (2 * np.sin(np.pi / 5))
+    angle_step = 2 * np.pi / 5
+    coordinates = []
+    
+    for i in range(5):
+        start_angle = i * angle_step
+        end_angle = (i + 1) * angle_step
+        
+        x1 = np.linspace(radius * np.cos(start_angle), radius * np.cos(end_angle), num_points // 5 + 1)
+        y1 = np.linspace(radius * np.sin(start_angle), radius * np.sin(end_angle), num_points // 5 + 1)
+        
+        # Exclude the last point of each segment to avoid duplication at vertices
+        if i < 4:
+            x1 = x1[:-1]
+            y1 = y1[:-1]
+        
+        coordinates.extend(zip(x1, y1))
+    
+    coordinates = np.array(coordinates) + center
+    
+    return np.flip(coordinates)
+
+def get_hex(center, side_length, num_points):
+    radius = side_length / (2 * np.sin(np.pi / 6))
+    angle_step = 2 * np.pi / 6
+    coordinates = []
+    
+    for i in range(6):
+        start_angle = i * angle_step
+        end_angle = (i + 1) * angle_step
+        
+        x1 = np.linspace(radius * np.cos(start_angle), radius * np.cos(end_angle), num_points // 6 + 1)
+        y1 = np.linspace(radius * np.sin(start_angle), radius * np.sin(end_angle), num_points // 6 + 1)
+        
+        # Exclude the last point of each segment to avoid duplication at vertices
+        if i < 5:
+            x1 = x1[:-1]
+            y1 = y1[:-1]
+        
+        coordinates.extend(zip(x1, y1))
+    
+    coordinates = np.array(coordinates) + center
+    
+    return coordinates
+
+
+def get_triangle(center, base, height, num_points):
+    N = num_points//3
+    A = np.array([0.0, 0.0])
+    B = np.array([base, 0.0])
+    C = np.array([base / 2.0, height])
+    
+    points = []
+    # Generate points along the edges
+    def add_points_on_edge(p1, p2, num_points):
+        for t in np.linspace(0, 1, num_points):
+            point = p1 + t * (p2 - p1)
+            points.append(point)
+    
+    add_points_on_edge(A, B, N)
+    add_points_on_edge(B, C, N)
+    add_points_on_edge(C, A, N)
+
+    return np.array(points) - np.array([base/2, height]) + center
+
 '''
 rhombus = get_rhomb([0, 0], 1, 1, 100)
 plt.plot(rhombus[:,0], rhombus[:,1])
@@ -63,7 +116,7 @@ plt.show()
 '''
 
 '''
-triangle = get_triangle([.5, .2887], .5, 100)
+triangle = get_triangle([0, 0], 1, 100)
 plt.plot(triangle[:,0], triangle[:,1])
 plt.show()
 '''
