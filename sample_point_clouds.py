@@ -107,7 +107,7 @@ def get_triangle(center, base, height, num_points):
     add_points_on_edge(B, C, N)
     add_points_on_edge(C, A, N)
 
-    return np.array(points) - np.array([base/2, height]) + center
+    return np.array(points) - np.array([base/2, height/2]) + center
 
 '''
 rhombus = get_rhomb([0, 0], 1, 1, 100)

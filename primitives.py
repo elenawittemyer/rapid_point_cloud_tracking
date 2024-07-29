@@ -47,7 +47,7 @@ batch_sdf_h = vmap(sdfHexagon, in_axes = [0, None])
 #Works
 def sdfTriangle(p, q):
     q = np.array([q[0]/2, -q[1]]) #for equilateral size 1, q=(.5, -1)
-    p = np.array([np.abs(p[0]), p[1]])
+    p = np.array([np.abs(p[0]), p[1]-.5]) #p[1]-.5 only works for triangles with height 1
     a = p - q*np.clip(np.dot(p, q)/np.dot(q, q), 0, 1)
     b = p - q*np.array([np.clip(p[0]/q[0], 0, 1), 1])
     k = np.sign(q[1])
