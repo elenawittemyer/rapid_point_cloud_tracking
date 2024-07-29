@@ -172,5 +172,5 @@ with open('Visualization/c_iter.txt', 'w') as f:
 #TODO: implement T[2] into optimized T (theta isn't current used)
 
 start_time = time.time()
-main(2)
+main(20)
 print(time.time()-start_time)

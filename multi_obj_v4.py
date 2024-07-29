@@ -240,8 +240,9 @@ def main(frames, num_clouds):
             shapes_new.append(shape)
             
         print("\n** iteration " + str(i) + " **")
-        print('transforms: \n', np.array([transforms])[0])
-        print('sdfs: \n', np.array([sdfs])[0])
+        print('transforms: ', np.array([transforms])[0])
+        print('sdfs: ', np.array([sdfs])[0])
+        print('twists :', twists)
 
         transforms = transforms_new
         sdfs = sdfs_new
@@ -288,7 +289,7 @@ def get_point_clouds(iter):
     point_cloud_t = get_triangle(np.array([8-iter, 8+3*iter]), 1, 1, 100)
     point_cloud_r = get_rhomb(np.array([5+2*iter, 5+2*iter]), 1, 1, 100)
     point_cloud_h = get_hex(np.array([-5-.5*iter, 17-iter]), 1, 100)
-    return np.concatenate((point_cloud_c, point_cloud_sq, point_cloud_t, point_cloud_r, point_cloud_h), axis=0)
+    return np.concatenate((point_cloud_c, point_cloud_sq, point_cloud_t), axis=0)
 
 def random_vel(iter):
     if iter<5:
@@ -323,5 +324,5 @@ with open('Visualization/c_iter.txt', 'w') as f:
 #TODO: implement T[2] into optimized T (theta isn't current used)
 
 start_time = time.time()
-main(20, 5)
+main(20, 3)
 print(time.time()-start_time)
