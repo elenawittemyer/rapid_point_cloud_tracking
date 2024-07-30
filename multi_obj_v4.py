@@ -167,7 +167,7 @@ def main(frames, num_clouds):
     sdfs = []
     shapes = []
     twists = get_robot_vel()*np.ones((num_clouds, 3))
-    measured_clouds = get_point_clouds(0)
+    measured_clouds, pos_data, vel_data = get_point_clouds(0)
     segmented_clouds, init_split_idx = sdf_segmentation(np.array([0., 0.]), measured_clouds, num_clouds)
     
     for cloud in segmented_clouds:
@@ -179,7 +179,7 @@ def main(frames, num_clouds):
 
     i = 1
     while i<frames:
-        measured_clouds = get_point_clouds(i)
+        measured_clouds, pos_data, vel_data = get_point_clouds(i, pos_data, vel_data)
         segmented_clouds, ordered_shapes = shape_segmentation(init_shapes, num_clouds, init_split_idx, measured_clouds)
         
         transforms_new = []
@@ -227,7 +227,7 @@ def main(frames, num_clouds):
 
         transforms = transforms_new
         sdfs = sdfs_new
-        
+
         i += 1
 
 ################################
@@ -249,7 +249,7 @@ def get_twist(R0, Rf):
 ## segmentation ################
 ################################
 
-def sdf_segmentation(transform_init, point_cloud, num_clouds): #TODO: distance-based segmentation is unreliable
+def sdf_segmentation(transform_init, point_cloud, num_clouds):
     sdf_array_c = batch_sdf_c(transform_init, point_cloud)
     filter = np.diff(sdf_array_c)
     split_indices = np.where(np.abs(filter)>2.5)[0].tolist()
@@ -260,7 +260,7 @@ def sdf_segmentation(transform_init, point_cloud, num_clouds): #TODO: distance-b
         split_clouds.append(point_cloud[(split_indices[i]):(split_indices[i+1]-1)])
     return split_clouds, split_indices
 
-def shape_segmentation(shapes, num_clouds, split_indices, point_cloud):
+def shape_segmentation(shapes, num_clouds, split_indices, point_cloud): #NOTE: only works if point clouds remain same size and are measured sequentially
     split_clouds = []
     split_clouds = [point_cloud[0:split_indices[0]]]
     for i in range(0, num_clouds-1):
@@ -304,15 +304,27 @@ def shape_segmentation(shapes, num_clouds, split_indices, point_cloud):
 ################################
 ## test data ###################
 ################################
-def get_point_clouds(iter):
-    point_cloud_c = get_circle(np.array([iter, -iter]), 1, 100)
-    point_cloud_sq = get_rect(np.array([-12-iter, -12-iter]), 1, 1, 100)
-    point_cloud_t = get_triangle(np.array([8-iter, 8+3*iter]), 2, 2, 100)
-    point_cloud_r = get_rhomb(np.array([5+2*iter, 5+2*iter]), 1, 1, 100)
-    point_cloud_h = get_hex(np.array([-5-.5*iter, 17-iter]), 1, 100)
-    return np.concatenate((point_cloud_c, point_cloud_sq, point_cloud_t), axis=0)
+def get_point_clouds(iter, start_pos = None, vel = None):
+    num_clouds = 5
+    if start_pos is None:
+        start_pos_x = numpy.random.choice(np.arange(-10, 11), num_clouds, replace=False)
+        start_pos_y = numpy.random.choice(np.arange(-10, 11), num_clouds, replace=False)
+        start_pos = np.hstack((np.array([start_pos_x]).T, np.array([start_pos_y]).T))
+
+    if iter%10 == 0:
+        vel = numpy.random.randint(-2, 3, num_clouds*2)
+        vel = np.reshape(vel, (num_clouds, 2))
+    
+    start_pos = start_pos + vel
+    point_cloud_c = get_circle(start_pos[0], 1, 100)
+    point_cloud_sq = get_rect(start_pos[1], 1, 1, 100)
+    point_cloud_t = get_triangle(start_pos[2], 2, 2, 100)
+    point_cloud_r = get_rhomb(start_pos[3], 1, 1, 100)
+    point_cloud_h = get_hex(start_pos[4], 1, 100)
+    return np.concatenate((point_cloud_c, point_cloud_sq, point_cloud_t, point_cloud_r, point_cloud_h), axis=0), start_pos, vel
 
 def random_vel(iter):
+    
     if iter<5:
         pos = np.array([iter+1, iter+1])
     elif 5<=iter<20:
@@ -345,5 +357,5 @@ with open('Visualization/c_iter.txt', 'w') as f:
 #TODO: implement T[2] into optimized T (theta isn't current used)
 
 start_time = time.time()
-main(20, 3)
+main(20, 5)
 print(time.time()-start_time)
