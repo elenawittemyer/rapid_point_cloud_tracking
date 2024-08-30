@@ -187,7 +187,7 @@ with open('Visualization/c_iter.txt', 'w') as f:
         f.write(f"{line}\n")
 '''
 start_time = time.time()
-main(50)
+main(20)
 print(time.time()-start_time)
 
 '''

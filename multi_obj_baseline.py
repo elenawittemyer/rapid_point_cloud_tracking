@@ -5,6 +5,7 @@ import numpy
 from jax import jit
 import jaxlie
 from jaxlie import SE2, SE3
+from sklearn.cluster import DBSCAN
 from sample_point_clouds import get_hex, get_rect, get_circle, get_rhomb, get_triangle
 import time
 import scipy
@@ -12,11 +13,7 @@ import scipy
 @jit
 def sdf_sq(T, point):
     # transform point cloud
-    T = SE2.from_xy_theta(T[0], T[1], 0.)
-    T_inv = SE2.inverse(T)
-    T_p = SE2.from_xy_theta(point[0], point[1], 0.)
-    point_pos = np.array([(T_inv@T_p).translation()[0],
-                            (T_inv@T_p).translation()[1]])
+    point_pos = point - T
     
     # measure sdf at each point of transformed point cloud
     a = np.array([0., -1])
@@ -36,12 +33,8 @@ def sdf_sq(T, point):
 @jit
 def sdf_c(T, point):
     # transform point cloud
-    T = SE2.from_xy_theta(T[0], T[1], 0.)
-    T_inv = SE2.inverse(T)
-    T_p = SE2.from_xy_theta(point[0], point[1], 0.)
-    point_pos = np.array([(T_inv@T_p).translation()[0],
-                          (T_inv@T_p).translation()[1]])
-    
+    point_pos = point - T
+
     # measure sdf at each point of transformed point cloud
     r = 1.
     sdf = np.linalg.norm(point_pos) - r
@@ -49,12 +42,8 @@ def sdf_c(T, point):
 
 @jit
 def sdf_t(T, point):
-    T = SE2.from_xy_theta(T[0], T[1], 0.)
-    T_inv = SE2.inverse(T)
-    T_p = SE2.from_xy_theta(point[0], point[1], 0.)
-    point_pos = np.array([(T_inv@T_p).translation()[0],
-                            (T_inv@T_p).translation()[1]])
-    
+    point_pos = point - T
+
     p = point_pos
     q = np.array([1, -2])
     p = np.array([np.abs(p[0]), p[1]-1])
@@ -70,11 +59,7 @@ def ndot(a, b):
 
 @jit
 def sdf_r(T, point):
-    T = SE2.from_xy_theta(T[0], T[1], 0.)
-    T_inv = SE2.inverse(T)
-    T_p = SE2.from_xy_theta(point[0], point[1], 0.)
-    point_pos = np.array([(T_inv@T_p).translation()[0],
-                            (T_inv@T_p).translation()[1]])
+    point_pos = point - T
     
     p = point_pos
     b = np.array([1, 1])
@@ -85,11 +70,7 @@ def sdf_r(T, point):
 
 @jit
 def sdf_h(T, point):
-    T = SE2.from_xy_theta(T[0], T[1], 0.)
-    T_inv = SE2.inverse(T)
-    T_p = SE2.from_xy_theta(point[0], point[1], 0.)
-    point_pos = np.array([(T_inv@T_p).translation()[0],
-                            (T_inv@T_p).translation()[1]])
+    point_pos = point - T
     
     p = point_pos
     r = 1/(2*np.tan(np.pi/6))
@@ -161,14 +142,17 @@ def assign_primitive(shapes, point_cloud):
             assigned_shape = shapes[i]
     return min_params[0], min_params[1], assigned_shape
 
-def main(frames, num_clouds):
+def baseline_main(frames, num_clouds):
     test_shapes = ['square', 'circle', 'triangle', 'rhombus', 'hexagon']
     transforms = []
     sdfs = []
     shapes = []
-    twists = get_robot_vel()*np.ones((num_clouds, 3))
+
     measured_clouds, pos_data, vel_data = get_point_clouds(0)
-    segmented_clouds, init_split_idx = sdf_segmentation(np.array([0., 0.]), measured_clouds, num_clouds)
+    if num_clouds > 1:
+        segmented_clouds = cluster_segmentation(measured_clouds, num_clouds)
+    else:
+        segmented_clouds = measured_clouds
     
     for cloud in segmented_clouds:
         transform, sdf, shape = assign_primitive(test_shapes, cloud)
@@ -180,50 +164,19 @@ def main(frames, num_clouds):
     i = 1
     while i<frames:
         measured_clouds, pos_data, vel_data = get_point_clouds(i, pos_data, vel_data)
-        segmented_clouds, ordered_shapes = shape_segmentation(init_shapes, num_clouds, init_split_idx, measured_clouds)
+        segmented_clouds, ordered_shapes = shape_cor(init_shapes, num_clouds, measured_clouds)
         
         transforms_new = []
         sdfs_new = []
-
         for j in range(num_clouds):
-            transform = transforms[j]
-            est_pos_SE2 = evolve_pos(transform, twists[j])
-            est_pos = np.array([(est_pos_SE2).translation()[0],
-                                (est_pos_SE2).translation()[1]])
-
-            if ordered_shapes[j] == 'circle':
-                sdf_current = calc_cost_c(est_pos, segmented_clouds[j])
-                
-            elif ordered_shapes[j] == 'square':
-                sdf_current = calc_cost_sq(est_pos, segmented_clouds[j])
-
-            elif ordered_shapes[j] == 'triangle':
-                sdf_current = calc_cost_t(est_pos, segmented_clouds[j])
-            
-            elif ordered_shapes[j] == 'rhombus':
-                sdf_current = calc_cost_r(est_pos, segmented_clouds[j])
-
-            elif ordered_shapes[j] == 'hexagon':
-                sdf_current = calc_cost_h(est_pos, segmented_clouds[j])
-
-            else:
-                return 'unrecognized shape'
-            
-            if sdf_current>.1:
-                transform_new, sdf_new, shape_new = assign_primitive([ordered_shapes[j]], segmented_clouds[j])
-                del_twist = get_twist(transform, transform_new)
-                twists = twists.at[j].set(get_robot_vel() + del_twist)
-                transform, sdf, shape = transform_new, sdf_new, shape_new
-            else:
-                transform, sdf, shape = est_pos, sdf_current, shape
-
+            transform_new, sdf_new, shape_new = assign_primitive([ordered_shapes[j]], segmented_clouds[j])
+            transform, sdf, shape = transform_new, sdf_new, shape_new
             transforms_new.append(transform)
             sdfs_new.append(sdf)
             
         print("\n** iteration " + str(i) + " **")
         print('transforms: ', np.array([transforms])[0])
         print('sdfs: ', np.array([sdfs])[0])
-        print('twists :', twists)
 
         transforms = transforms_new
         sdfs = sdfs_new
@@ -231,40 +184,33 @@ def main(frames, num_clouds):
         i += 1
 
 ################################
-## lie group helpers ###########
-################################
-
-def evolve_pos(R0, wt):
-    R0 = SE2.from_xy_theta(R0[0], R0[1], 0.)
-    Rf = R0 @ SE2.exp(wt)
-    return Rf
-
-def get_twist(R0, Rf):
-    R0 = SE2.from_xy_theta(R0[0], R0[1], 0.)
-    Rf = SE2.from_xy_theta(Rf[0], Rf[1], 0.)
-    twist = SE2.log(Rf @ SE2.inverse(R0))
-    return twist
-
-################################
 ## segmentation ################
 ################################
 
-def sdf_segmentation(transform_init, point_cloud, num_clouds):
-    sdf_array_c = batch_sdf_c(transform_init, point_cloud)
-    filter = np.diff(sdf_array_c)
-    split_indices = np.where(np.abs(filter)>2.5)[0].tolist()
-    split_indices.append(len(point_cloud))
-    split_indices = np.array(split_indices)+1
-    split_clouds = [point_cloud[0:split_indices[0]]]
-    for i in range(0, num_clouds-1):
-        split_clouds.append(point_cloud[(split_indices[i]):(split_indices[i+1]-1)])
-    return split_clouds, split_indices
+def cluster_segmentation(point_cloud, num_clouds):
+    clustering = DBSCAN(eps=2).fit(point_cloud)
+    labels = clustering.labels_
+    segmented_clouds = []
 
-def shape_segmentation(shapes, num_clouds, split_indices, point_cloud): #NOTE: only works if point clouds remain same size and are measured sequentially
-    split_clouds = []
-    split_clouds = [point_cloud[0:split_indices[0]]]
-    for i in range(0, num_clouds-1):
-        split_clouds.append(point_cloud[(split_indices[i]):(split_indices[i+1]-1)])
+    sort_labels = np.argsort(labels)
+    sort_cloud = point_cloud[sort_labels]
+    end = np.argmax(labels>0)
+    segmented_clouds.append(sort_cloud[0:end])
+    start = end
+
+    for i in range(1, num_clouds-1):
+        end = np.argmax(labels>i)
+        segmented_clouds.append(sort_cloud[start:end])
+        start = end
+    
+    segmented_clouds.append(sort_cloud[start:len(point_cloud)])
+    return segmented_clouds
+
+def shape_cor(shapes, num_clouds, point_cloud):
+    if num_clouds > 1:
+        split_clouds = cluster_segmentation(point_cloud, num_clouds)
+    else:
+        split_clouds = point_cloud
     
     swap_idxs = []
     new_shapes = []
@@ -321,24 +267,9 @@ def get_point_clouds(iter, start_pos = None, vel = None):
     point_cloud_t = get_triangle(start_pos[2], 2, 2, 100)
     point_cloud_r = get_rhomb(start_pos[3], 1, 1, 100)
     point_cloud_h = get_hex(start_pos[4], 1, 100)
+
+    #return np.array([point_cloud_c]), start_pos, vel
     return np.concatenate((point_cloud_c, point_cloud_sq, point_cloud_t, point_cloud_r, point_cloud_h), axis=0), start_pos, vel
-
-def random_vel(iter):
-    
-    if iter<5:
-        pos = np.array([iter+1, iter+1])
-    elif 5<=iter<20:
-        pos = np.array([2*iter-5, 11-iter])
-    elif 20<=iter<28:
-        pos = np.array([73-2*iter, iter-27])
-    else:
-        pos = np.array([iter-9, iter-29])
-    return pos
-
-def get_robot_vel():
-    Ti = np.array([0., 0., 0.])
-    Tf = np.array([0., 0., 0.])
-    return get_twist(Ti, Tf)
 
 ################################
 ## visualization helpers #######
@@ -353,9 +284,3 @@ with open('Visualization/c_iter.txt', 'w') as f:
     for line in sdf_c_iter:
         f.write(f"{line}\n")
 '''
-
-#TODO: implement T[2] into optimized T (theta isn't current used)
-
-start_time = time.time()
-main(20, 5)
-print(time.time()-start_time)
